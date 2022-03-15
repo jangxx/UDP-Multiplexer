@@ -21,6 +21,8 @@ using System.Diagnostics;
 using Microsoft.Win32;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.IO;
 
 namespace udp_mux
 {
@@ -67,6 +69,7 @@ namespace udp_mux
         }
 
         public AddressInputDataType Type;
+        public IPHostEntry? HostEntry;
     }
 
     public class Packet
@@ -85,15 +88,35 @@ namespace udp_mux
         private bool SettingAutostart = false;
         private CancellationTokenSource MainThreadCancellationSource;
         private Thread? MainThread = null;
+        private long PacketsForwardedCount = 0L;
 
         public MainWindow()
         {
             InitializeComponent();
 
+            packetCountField.Text = "0";
             icInputAddresses.ItemsSource = InputAddresses;
             icOutputAddresses.ItemsSource = OutputAddresses;
+
+            UpdateSettingsControls();
+        }
+
+        public void ProcessStartupConfig()
+        {
+            if (SettingAutostart)
+            {
+                StartMain();
+            }
+        }
+
+        private void UpdateSettingsControls()
+        {
             cbAutostart.IsChecked = SettingAutostart;
-            
+        }
+
+        private void UpdateSettingsFromControls()
+        {
+            SettingAutostart = cbAutostart.IsChecked == true;
         }
 
         public void Run()
@@ -104,11 +127,33 @@ namespace udp_mux
 
             BlockingCollection<Packet> packetQueue = new BlockingCollection<Packet>();
 
-            foreach (var address in InputAddresses)
+            // try resolving all addresses
+            foreach (var address in InputAddresses.Concat(OutputAddresses))
             {
-                var hostEntry = Dns.GetHostEntry(hostNameOrAddress: address.Address);
+                try
+                {
+                    address.HostEntry = Dns.GetHostEntry(hostNameOrAddress: address.Address);
+                }
+                catch (SocketException ex)
+                {
+                    if (ex.SocketErrorCode == SocketError.HostNotFound)
+                    {
+                        MessageBox.Show("Could not resolve host '" + address.Address + "'", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Unexpected error occured while resolving address'" + address.Address + "': " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
 
-                foreach (IPAddress addr in hostEntry.AddressList)
+                    this.MainThread = null;
+                    Application.Current.Dispatcher.Invoke(new Action(() => StopMain()));
+                    return;
+                }
+            }
+
+            foreach (var address in InputAddresses)
+            {   
+                foreach (IPAddress addr in address.HostEntry!.AddressList)
                 {
                     var endpoint = new IPEndPoint(addr, (int)address.Port);
 
@@ -116,21 +161,21 @@ namespace udp_mux
                     socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
                     socket.Bind(endpoint);
 
-                    ingressSockets.Add(new IngressSocketThread(socket, packetQueue));
+                    Debug.WriteLine("Started input thread on " + endpoint.ToString());
+                    ingressSockets.Add(new IngressSocketThread(socket, packetQueue, this));
                 }
             }
 
             foreach (var address in OutputAddresses)
             {
-                var hostEntry = Dns.GetHostEntry(hostNameOrAddress: address.Address);
-
-                foreach(IPAddress addr in hostEntry.AddressList)
+                foreach (IPAddress addr in address.HostEntry!.AddressList)
                 {
                     var endpoint = new IPEndPoint(addr, (int)address.Port);
 
                     Socket socket = new Socket(addr.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
 
-                    egressSockets.Add(new EgressSocketThread(socket, endpoint));
+                    Debug.WriteLine("Started output thread for " + endpoint.ToString());
+                    egressSockets.Add(new EgressSocketThread(socket, endpoint, this));
                 }
             }
 
@@ -156,6 +201,12 @@ namespace udp_mux
                     {
                         sock.Enqueue(packet);
                     }
+
+                    Application.Current.Dispatcher.Invoke(new Action(() =>
+                    {
+                        this.PacketsForwardedCount += 1;
+                        this.packetCountField.Text = this.PacketsForwardedCount.ToString();
+                    }));
                 }
             } 
             catch(OperationCanceledException)
@@ -172,6 +223,17 @@ namespace udp_mux
                 }
                 Debug.WriteLine("main exited");
             }
+        }
+
+        public void StopMain()
+        {
+            if (this.MainThread != null)
+            {
+                this.MainThreadCancellationSource.Cancel();
+                this.MainThread.Join();
+                this.MainThread = null;
+            }
+            startButton.Content = "Start";
         }
 
         private void Btn_addInput(object sender, RoutedEventArgs e)
@@ -191,25 +253,47 @@ namespace udp_mux
             }
         }
 
+        private void StartMain()
+        {
+            this.PacketsForwardedCount = 0;
+            packetCountField.Text = this.PacketsForwardedCount.ToString();
+
+            // check addresses and ports
+            foreach (var ia in InputAddresses)
+            {
+                if (ia.Address == null || ia.Port == 0)
+                {
+                    MessageBox.Show("One of the inputs is missing an address", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+            }
+            foreach (var ia in OutputAddresses)
+            {
+                if (ia.Address == null || ia.Port == 0)
+                {
+                    MessageBox.Show("One of the outputs is missing an address", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+            }
+
+            this.MainThreadCancellationSource = new CancellationTokenSource();
+
+            this.MainThread = new Thread(new ThreadStart(Run));
+            this.MainThread.IsBackground = true;
+            this.MainThread.Name = "Main Worker Thread";
+            this.MainThread.Start();
+            startButton.Content = "Stop";
+        }
 
         private void Btn_start(object sender, RoutedEventArgs e)
         {
             if (this.MainThread == null)
             {
-                this.MainThreadCancellationSource = new CancellationTokenSource();
-
-                this.MainThread = new Thread(new ThreadStart(Run));
-                this.MainThread.IsBackground = true;
-                this.MainThread.Name = "Main Thread";
-                this.MainThread.Start();
-                startButton.Content = "Stop";
+                StartMain();
             } 
             else
             {
-                this.MainThreadCancellationSource.Cancel();
-                this.MainThread.Join();
-                this.MainThread = null;
-                startButton.Content = "Start";
+                StopMain();
             }
         }
 
@@ -238,12 +322,60 @@ namespace udp_mux
 
         private void Btn_saveConfig(object sender, RoutedEventArgs e)
         {
+            UpdateSettingsFromControls();
+
             SaveFileDialog saveFileDialog = new SaveFileDialog();
             saveFileDialog.Filter = "JSON file|*.json";
             if (saveFileDialog.ShowDialog() == true)
             {
+                var configFile = new ConfigFile();
+                configFile.Inputs = InputAddresses
+                    .ToList()
+                    .ConvertAll<ConfigAddressTuple>(addr => new ConfigAddressTuple { Address = addr.Address, Port = addr.Port });
+                configFile.Outputs = OutputAddresses
+                    .ToList()
+                    .ConvertAll<ConfigAddressTuple>(addr => new ConfigAddressTuple { Address = addr.Address, Port = addr.Port });
+                configFile.Autostart = SettingAutostart;
 
+                string jsonString = JsonSerializer.Serialize(configFile, new JsonSerializerOptions() { WriteIndented = true});
+                File.WriteAllText(saveFileDialog.FileName, jsonString);
             }
+        }
+
+        public void LoadConfig(String path)
+        {
+            string jsonString = File.ReadAllText(path);
+
+            if (jsonString == null) return;
+
+            ConfigFile configFile;
+            try
+            {
+                configFile = JsonSerializer.Deserialize<ConfigFile>(jsonString);
+            }
+            catch(JsonException ex)
+            {
+                MessageBox.Show("Could not parse config file: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            if (configFile == null) return;
+
+            InputAddresses.Clear();
+            foreach (var addr in configFile.Inputs)
+            {
+                InputAddresses.Add(new AddressInputData { CanRemove=configFile.Inputs.Count > 1, Address = addr.Address, Port = (UInt16)addr.Port, Type = AddressInputDataType.INPUT });
+            }
+
+            OutputAddresses.Clear();
+            foreach (var addr in configFile.Outputs)
+            {
+                OutputAddresses.Add(new AddressInputData { CanRemove = configFile.Outputs.Count > 1, Address = addr.Address, Port = (UInt16)addr.Port, Type = AddressInputDataType.OUTPUT });
+            }
+
+            SettingAutostart = configFile.Autostart;
+
+            UpdateSettingsControls();
         }
 
         private void Btn_openConfig(object sender, RoutedEventArgs e)
@@ -252,7 +384,7 @@ namespace udp_mux
             openFileDialog.Filter = "JSON file|*.json";
             if (openFileDialog.ShowDialog() == true)
             {
-
+                LoadConfig(openFileDialog.FileName);
             }
         }
     }

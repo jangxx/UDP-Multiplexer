@@ -19,11 +19,13 @@ namespace udp_mux
         private IPEndPoint Endpoint;
         private CancellationTokenSource CancelTokenSource = new CancellationTokenSource();
         private Thread? RunningThread = null;
+        private MainWindow ParentWindow;
 
-        public EgressSocketThread(Socket socket, IPEndPoint endpoint)
+        public EgressSocketThread(Socket socket, IPEndPoint endpoint, MainWindow parent)
         {
             this.Socket = socket;
             this.Endpoint = endpoint;
+            this.ParentWindow = parent;
 
         }
         public void Enqueue(Packet packet)
@@ -68,11 +70,14 @@ namespace udp_mux
             catch (OperationCanceledException)
             {
                 // just let the function exit
-                Debug.WriteLine("egress exited " + this.Socket.LocalEndPoint.ToString());
+                Debug.WriteLine("egress exited");
+                return;
             }
             catch (Exception ex)
             {
                 MessageBox.Show("Egress encoutered an exception: " + ex.ToString() + "(" + ex.Message + ")");
+                this.ParentWindow.StopMain();
+                return;
             }
         }
     }

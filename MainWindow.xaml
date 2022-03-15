@@ -68,6 +68,10 @@
                 </StackPanel>
             </GroupBox>
             <DockPanel Height="23" LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center">
+                    <Run Text="Packets forwarded: "/>
+                    <Run x:Name="packetCountField" />
+                </TextBlock>
                 <Button x:Name="startButton" Content="Start" DockPanel.Dock="Right" Width="40" Margin="10,0,0,0" Click="Btn_start" VerticalAlignment="Center"/>
                 <!--<Button Content="Save in config file" DockPanel.Dock="Right" Click="Btn_saveConfig" VerticalAlignment="Center"/>-->
             </DockPanel>

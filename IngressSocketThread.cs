@@ -17,11 +17,13 @@ namespace udp_mux
         private BlockingCollection<Packet> PacketQueue;
         private Socket Socket;
         private Thread? RunningThread = null;
+        private MainWindow ParentWindow;
 
-        public IngressSocketThread(Socket socket, BlockingCollection<Packet> outputQueue)
+        public IngressSocketThread(Socket socket, BlockingCollection<Packet> outputQueue, MainWindow parent)
         {
             this.Socket = socket;
             this.PacketQueue = outputQueue;
+            this.ParentWindow = parent;
         }
 
         public void Stop()
@@ -63,7 +65,7 @@ namespace udp_mux
             {
                 while (true)
                 {
-                    IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
+                    IPEndPoint sender = new IPEndPoint(this.Socket.AddressFamily == AddressFamily.InterNetworkV6 ? IPAddress.IPv6Any : IPAddress.Any, 0);
                     EndPoint senderRemote = (EndPoint)sender;
                     int bytes_received = this.Socket.ReceiveFrom(buffer[select_buffer], ref senderRemote);
 
@@ -80,6 +82,7 @@ namespace udp_mux
                 {
                     // just end peacefully
                     Debug.WriteLine("ingress exited");
+                    return;
                 }
                 else
                 {
@@ -89,6 +92,8 @@ namespace udp_mux
             catch (Exception ex)
             {
                 MessageBox.Show("Ingress encoutered an exception: " + ex.ToString() + "(" + ex.Message + ")");
+                this.ParentWindow.StopMain();
+                return;
             }
         }
     }
