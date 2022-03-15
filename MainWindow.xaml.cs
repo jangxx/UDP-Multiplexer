@@ -17,13 +17,62 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using System.Diagnostics;
+using Microsoft.Win32;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 namespace udp_mux
 {
-    public class AddressTuple
+    public enum AddressInputDataType
     {
-        public string? Address { get; set; }
-        public UInt16? Port { get; set; }
+        INPUT, OUTPUT
+    }
+
+    public class AddressInputData : INotifyPropertyChanged
+    { // https://stackoverflow.com/a/1316417/1342618
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected virtual void OnPropertyChanged(string propertyName)
+        {
+            PropertyChangedEventHandler handler = PropertyChanged;
+            if (handler != null) handler(this, new PropertyChangedEventArgs(propertyName));
+        }
+        protected bool SetField<T>(ref T field, T value, [CallerMemberName] string propertyName = null)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+            field = value;
+            OnPropertyChanged(propertyName);
+            return true;
+        }
+
+        private string address;
+        public string Address
+        {
+            get { return address; }
+            set { SetField(ref address, value); }
+        }
+
+        private UInt16 port;
+        public UInt16 Port
+        {
+            get { return port; }
+            set { SetField(ref port, value); }
+        }
+
+        private bool canRemove;
+        public bool CanRemove
+        {
+            get { return canRemove; }
+            set { SetField(ref canRemove, value); }
+        }
+
+        public AddressInputDataType Type;
+    }
+
+    public class Packet
+    {
+        public byte[] Data { get; set; }
+        public int Size { get; set; }
     }
 
     /// <summary>
@@ -31,17 +80,20 @@ namespace udp_mux
     /// </summary>
     public partial class MainWindow : Window
     {
-        private ObservableCollection<AddressTuple> inputAddresses = new ObservableCollection<AddressTuple>() { new AddressTuple() };
-        private ObservableCollection<AddressTuple> outputAddresses = new ObservableCollection<AddressTuple>() { new AddressTuple() };
-        private CancellationTokenSource MainThreadCancellationSource = new CancellationTokenSource();
+        private ObservableCollection<AddressInputData> InputAddresses = new ObservableCollection<AddressInputData>() { new AddressInputData { CanRemove = false, Type=AddressInputDataType.INPUT } };
+        private ObservableCollection<AddressInputData> OutputAddresses = new ObservableCollection<AddressInputData>() { new AddressInputData { CanRemove = false, Type = AddressInputDataType.OUTPUT } };
+        private bool SettingAutostart = false;
+        private CancellationTokenSource MainThreadCancellationSource;
         private Thread? MainThread = null;
 
         public MainWindow()
         {
             InitializeComponent();
 
-            icInputAddresses.ItemsSource = inputAddresses;
-            icOutputAddresses.ItemsSource = outputAddresses;
+            icInputAddresses.ItemsSource = InputAddresses;
+            icOutputAddresses.ItemsSource = OutputAddresses;
+            cbAutostart.IsChecked = SettingAutostart;
+            
         }
 
         public void Run()
@@ -50,9 +102,9 @@ namespace udp_mux
             List<IngressSocketThread> ingressSockets = new List<IngressSocketThread>();
             List<EgressSocketThread> egressSockets = new List<EgressSocketThread>();
 
-            BlockingCollection<byte[]> packetQueue = new BlockingCollection<byte[]>();
+            BlockingCollection<Packet> packetQueue = new BlockingCollection<Packet>();
 
-            foreach (var address in inputAddresses)
+            foreach (var address in InputAddresses)
             {
                 var hostEntry = Dns.GetHostEntry(hostNameOrAddress: address.Address);
 
@@ -68,7 +120,7 @@ namespace udp_mux
                 }
             }
 
-            foreach (var address in outputAddresses)
+            foreach (var address in OutputAddresses)
             {
                 var hostEntry = Dns.GetHostEntry(hostNameOrAddress: address.Address);
 
@@ -94,47 +146,114 @@ namespace udp_mux
             }
 
             // start the distribution loop
-            byte[] packet;
-            while (packetQueue.TryTake(out packet, -1, this.MainThreadCancellationSource.Token))
+            Packet packet;
+            try
             {
-                // send the packet to all egress threads
-                foreach (var sock in egressSockets)
+                while (packetQueue.TryTake(out packet, -1, this.MainThreadCancellationSource.Token))
                 {
-                    sock.Enqueue(packet);
+                    // send the packet to all egress threads
+                    foreach (var sock in egressSockets)
+                    {
+                        sock.Enqueue(packet);
+                    }
                 }
+            } 
+            catch(OperationCanceledException)
+            {
+                // quit the ingress and egress threads
+                foreach (var t in ingressSockets)
+                {
+                    t.Stop();
+                }
+
+                foreach (var t in egressSockets)
+                {
+                    t.Stop();
+                }
+                Debug.WriteLine("main exited");
             }
         }
 
         private void Btn_addInput(object sender, RoutedEventArgs e)
         {
-            inputAddresses.Add(new AddressTuple());
-        }
-
-        private void Btn_removeInput(object sender, RoutedEventArgs e)
-        {
-            inputAddresses.Add(new AddressTuple());
+            InputAddresses.Add(new AddressInputData { CanRemove = true, Type = AddressInputDataType.INPUT });
+            foreach (var i in InputAddresses) {
+                i.CanRemove = true; // if we have added another address, all of them become deletable
+            }
         }
 
         private void Btn_addOutput(object sender, RoutedEventArgs e)
         {
-            outputAddresses.Add(new AddressTuple());
+            OutputAddresses.Add(new AddressInputData { CanRemove = true, Type = AddressInputDataType.OUTPUT });
+            foreach (var i in OutputAddresses)
+            {
+                i.CanRemove = true; // if we have added another address, all of them become deletable
+            }
         }
 
-        private void Btn_removeOutput(object sender, RoutedEventArgs e)
-        {
-            inputAddresses.Add(new AddressTuple());
-        }
 
         private void Btn_start(object sender, RoutedEventArgs e)
         {
-            //MessageBox.Show("Inputs: " + String.Join(", ", inputAddresses.ToList().ConvertAll(new Converter<AddressTuple, String>(addr => addr.Address + ":" + addr.Port))));
-            this.MainThread = new Thread(new ThreadStart(Run));
-            this.MainThread.IsBackground = true;
-            this.MainThread.Start();
+            if (this.MainThread == null)
+            {
+                this.MainThreadCancellationSource = new CancellationTokenSource();
+
+                this.MainThread = new Thread(new ThreadStart(Run));
+                this.MainThread.IsBackground = true;
+                this.MainThread.Name = "Main Thread";
+                this.MainThread.Start();
+                startButton.Content = "Stop";
+            } 
+            else
+            {
+                this.MainThreadCancellationSource.Cancel();
+                this.MainThread.Join();
+                this.MainThread = null;
+                startButton.Content = "Start";
+            }
+        }
+
+        private void Btn_removeAddress(object sender, RoutedEventArgs e)
+        {
+            var button = (Button)sender;
+            var addressData = (AddressInputData)button.DataContext;
+
+            if (addressData.Type == AddressInputDataType.INPUT)
+            {
+                InputAddresses.Remove(addressData);
+                if (InputAddresses.Count == 1)
+                {
+                    InputAddresses[0].CanRemove = false;
+                }
+            }
+            else
+            {
+                OutputAddresses.Remove(addressData);
+                if (OutputAddresses.Count == 1)
+                {
+                    OutputAddresses[0].CanRemove = false;
+                }
+            }
         }
 
         private void Btn_saveConfig(object sender, RoutedEventArgs e)
         {
+            SaveFileDialog saveFileDialog = new SaveFileDialog();
+            saveFileDialog.Filter = "JSON file|*.json";
+            if (saveFileDialog.ShowDialog() == true)
+            {
+
+            }
+        }
+
+        private void Btn_openConfig(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog();
+            openFileDialog.Filter = "JSON file|*.json";
+            if (openFileDialog.ShowDialog() == true)
+            {
+
+            }
         }
     }
 }

@@ -5,7 +5,8 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:udp_mux"
         mc:Ignorable="d"
-        Title="UDP Muxer" Width="350" WindowStartupLocation="CenterScreen" ResizeMode="CanMinimize" SizeToContent="Height">
+        x:Name="MainWindowName"
+        Title="UDP Multiplexer" Width="350" WindowStartupLocation="CenterScreen" ResizeMode="CanMinimize" SizeToContent="Height">
     <Window.Resources>
         <DataTemplate x:Key="AddressInputTemplate">
             <Grid Margin="0,0,0,5">
@@ -14,33 +15,40 @@
                     <ColumnDefinition Width="3*"></ColumnDefinition>
                     <ColumnDefinition Width="Auto"></ColumnDefinition>
                     <ColumnDefinition Width="1*"></ColumnDefinition>
-                    <ColumnDefinition Width="60"></ColumnDefinition>
+                    <ColumnDefinition Width="25"></ColumnDefinition>
                 </Grid.ColumnDefinitions>
 
                 <Label Grid.Column="0" Content="Address"></Label>
                 <TextBox Grid.Column="1" Text="{Binding Address,Mode=TwoWay}" HorizontalAlignment="Stretch" VerticalAlignment="Center"></TextBox>
                 <Label Grid.Column="2" Content="Port"></Label>
                 <TextBox Grid.Column="3" Text="{Binding Port,Mode=TwoWay}" VerticalAlignment="Center"></TextBox>
-                <Button Grid.Column="4" Content="Remove" DockPanel.Dock="Right" Margin="5,0,0,0" VerticalAlignment="Center"/>
+                <Button Grid.Column="4" Content="X" DockPanel.Dock="Right" Margin="5,0,0,0" VerticalAlignment="Center" Click="Btn_removeAddress" IsEnabled="{Binding CanRemove}"/>
             </Grid>
         </DataTemplate>
     </Window.Resources>
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
-                <MenuItem Header="_Open config file"></MenuItem>
-                <MenuItem Header="_Save config file"></MenuItem>
+                <MenuItem Header="_Open config file" Click="Btn_openConfig"></MenuItem>
+                <MenuItem Header="_Save config file" Click="Btn_saveConfig"></MenuItem>
             </MenuItem>
         </Menu>
         <StackPanel Margin="5,5,5,5">
+            <GroupBox Header="Settings">
+                <Border BorderThickness="5,5,5,5">
+                    <StackPanel>
+                        <CheckBox Content="Start when launched from config file" ToolTip="Automatically start the multiplexing when this config file is loaded as a launch parameter" Name="cbAutostart" />
+                    </StackPanel>
+                </Border>
+            </GroupBox>
             <GroupBox Header="Inputs">
                 <StackPanel>
                     <StackPanel>
                         <ItemsControl Name="icInputAddresses" ItemTemplate="{DynamicResource AddressInputTemplate}">
                         </ItemsControl>
                         <d:ItemsControl ItemTemplate="{DynamicResource AddressInputTemplate}">
-                            <local:AddressTuple Address="asd" Port="123"/>
-                            <local:AddressTuple Address="asd" Port="123"/>
+                            <local:AddressInputData Address="asd" Port="123" CanRemove="True"/>
+                            <local:AddressInputData Address="asd" Port="123" CanRemove="True"/>
                         </d:ItemsControl>
                     </StackPanel>
                     <Button Content="Add Input" Click="Btn_addInput"/>
@@ -52,15 +60,15 @@
                         <ItemsControl Name="icOutputAddresses" ItemTemplate="{DynamicResource AddressInputTemplate}">
                         </ItemsControl>
                         <d:ItemsControl ItemTemplate="{DynamicResource AddressInputTemplate}">
-                            <local:AddressTuple Address="asd" Port="123"/>
-                            <local:AddressTuple Address="asd" Port="123"/>
+                            <local:AddressInputData Address="asd" Port="123" CanRemove="True"/>
+                            <local:AddressInputData Address="asd" Port="123" CanRemove="True"/>
                         </d:ItemsControl>
                     </StackPanel>
                     <Button Content="Add Output" Click="Btn_addOutput"/>
                 </StackPanel>
             </GroupBox>
             <DockPanel Height="23" LastChildFill="False">
-                <Button Content="Start" DockPanel.Dock="Right" Width="40" Margin="10,0,0,0" Click="Btn_start" VerticalAlignment="Center"/>
+                <Button x:Name="startButton" Content="Start" DockPanel.Dock="Right" Width="40" Margin="10,0,0,0" Click="Btn_start" VerticalAlignment="Center"/>
                 <!--<Button Content="Save in config file" DockPanel.Dock="Right" Click="Btn_saveConfig" VerticalAlignment="Center"/>-->
             </DockPanel>
         </StackPanel>
