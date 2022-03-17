@@ -9,6 +9,11 @@
     <PublishReadyToRun>true</PublishReadyToRun>
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <ApplicationIcon>resources\icon.ico</ApplicationIcon>
+    <AssemblyName>UDP-Multiplexer</AssemblyName>
+    <Company>jangxx</Company>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RootNamespace>udp_mux</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

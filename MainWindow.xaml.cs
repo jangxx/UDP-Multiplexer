@@ -72,6 +72,37 @@ namespace udp_mux
         public IPHostEntry? HostEntry;
     }
 
+    public class MainWindowProperties : INotifyPropertyChanged
+    {
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected virtual void OnPropertyChanged(string propertyName)
+        {
+            PropertyChangedEventHandler handler = PropertyChanged;
+            if (handler != null) handler(this, new PropertyChangedEventArgs(propertyName));
+        }
+        protected bool SetField<T>(ref T field, T value, [CallerMemberName] string propertyName = null)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+            field = value;
+            OnPropertyChanged(propertyName);
+            return true;
+        }
+
+        private bool allInputsEnabled;
+        public bool AllInputsEnabled
+        {
+            get { return allInputsEnabled; }
+            set { SetField(ref allInputsEnabled, value); }
+        }
+
+        private long packetsForwardedCount;
+        public long PacketsForwardedCount
+        {
+            get { return packetsForwardedCount; }
+            set { SetField(ref packetsForwardedCount, value); }
+        }
+    }
+
     public class Packet
     {
         public byte[] Data { get; set; }
@@ -88,15 +119,19 @@ namespace udp_mux
         private bool SettingAutostart = false;
         private CancellationTokenSource MainThreadCancellationSource;
         private Thread? MainThread = null;
-        private long PacketsForwardedCount = 0L;
+        public MainWindowProperties DisplayProperties { get; set; }
 
         public MainWindow()
         {
             InitializeComponent();
+            this.DataContext = this;
 
-            packetCountField.Text = "0";
             icInputAddresses.ItemsSource = InputAddresses;
             icOutputAddresses.ItemsSource = OutputAddresses;
+
+            DisplayProperties = new MainWindowProperties();
+            DisplayProperties.AllInputsEnabled = true;
+            DisplayProperties.PacketsForwardedCount = 0L;
 
             UpdateSettingsControls();
         }
@@ -204,8 +239,7 @@ namespace udp_mux
 
                     Application.Current.Dispatcher.Invoke(new Action(() =>
                     {
-                        this.PacketsForwardedCount += 1;
-                        this.packetCountField.Text = this.PacketsForwardedCount.ToString();
+                        DisplayProperties.PacketsForwardedCount += 1;
                     }));
                 }
             } 
@@ -234,6 +268,7 @@ namespace udp_mux
                 this.MainThread = null;
             }
             startButton.Content = "Start";
+            DisplayProperties.AllInputsEnabled = true;
         }
 
         private void Btn_addInput(object sender, RoutedEventArgs e)
@@ -255,8 +290,8 @@ namespace udp_mux
 
         private void StartMain()
         {
-            this.PacketsForwardedCount = 0;
-            packetCountField.Text = this.PacketsForwardedCount.ToString();
+            DisplayProperties.AllInputsEnabled = false;
+            DisplayProperties.PacketsForwardedCount = 0;
 
             // check addresses and ports
             foreach (var ia in InputAddresses)

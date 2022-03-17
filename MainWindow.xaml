@@ -8,6 +8,7 @@
         x:Name="MainWindowName"
         Title="UDP Multiplexer" Width="350" WindowStartupLocation="CenterScreen" ResizeMode="CanMinimize" SizeToContent="Height">
     <Window.Resources>
+        <local:BooleanAndConverter x:Key="booleanAndConverter" />
         <DataTemplate x:Key="AddressInputTemplate">
             <Grid Margin="0,0,0,5">
                 <Grid.ColumnDefinitions>
@@ -19,10 +20,28 @@
                 </Grid.ColumnDefinitions>
 
                 <Label Grid.Column="0" Content="Address"></Label>
-                <TextBox Grid.Column="1" Text="{Binding Address,Mode=TwoWay}" HorizontalAlignment="Stretch" VerticalAlignment="Center"></TextBox>
+                <TextBox 
+                    Grid.Column="1" 
+                    Text="{Binding Address, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                    HorizontalAlignment="Stretch" 
+                    VerticalAlignment="Center" 
+                    IsEnabled="{Binding DataContext.DisplayProperties.AllInputsEnabled, ElementName=MainWindowName}">
+                </TextBox>
                 <Label Grid.Column="2" Content="Port"></Label>
-                <TextBox Grid.Column="3" Text="{Binding Port,Mode=TwoWay}" VerticalAlignment="Center"></TextBox>
-                <Button Grid.Column="4" Content="X" DockPanel.Dock="Right" Margin="5,0,0,0" VerticalAlignment="Center" Click="Btn_removeAddress" IsEnabled="{Binding CanRemove}"/>
+                <TextBox 
+                    Grid.Column="3" 
+                    Text="{Binding Port, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                    VerticalAlignment="Center"
+                    IsEnabled="{Binding DataContext.DisplayProperties.AllInputsEnabled, ElementName=MainWindowName}">
+                </TextBox>
+                <Button Grid.Column="4" Content="X" DockPanel.Dock="Right" Margin="5,0,0,0" VerticalAlignment="Center" Click="Btn_removeAddress">
+                    <Button.IsEnabled>
+                        <MultiBinding Converter="{StaticResource booleanAndConverter}">
+                            <Binding ElementName="MainWindowName" Path="DisplayProperties.AllInputsEnabled"/>
+                            <Binding Path="CanRemove" />
+                        </MultiBinding>
+                    </Button.IsEnabled>
+                </Button>
             </Grid>
         </DataTemplate>
     </Window.Resources>
@@ -51,7 +70,7 @@
                             <local:AddressInputData Address="asd" Port="123" CanRemove="True"/>
                         </d:ItemsControl>
                     </StackPanel>
-                    <Button Content="Add Input" Click="Btn_addInput"/>
+                    <Button Content="Add Input" Click="Btn_addInput" IsEnabled="{Binding DisplayProperties.AllInputsEnabled}"/>
                 </StackPanel>
             </GroupBox>
             <GroupBox Header="Outputs">
@@ -64,16 +83,15 @@
                             <local:AddressInputData Address="asd" Port="123" CanRemove="True"/>
                         </d:ItemsControl>
                     </StackPanel>
-                    <Button Content="Add Output" Click="Btn_addOutput"/>
+                    <Button Content="Add Output" Click="Btn_addOutput" IsEnabled="{Binding DisplayProperties.AllInputsEnabled}"/>
                 </StackPanel>
             </GroupBox>
             <DockPanel Height="23" LastChildFill="False">
                 <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center">
                     <Run Text="Packets forwarded: "/>
-                    <Run x:Name="packetCountField" />
+                    <Run Text="{Binding DisplayProperties.PacketsForwardedCount}" />
                 </TextBlock>
                 <Button x:Name="startButton" Content="Start" DockPanel.Dock="Right" Width="40" Margin="10,0,0,0" Click="Btn_start" VerticalAlignment="Center"/>
-                <!--<Button Content="Save in config file" DockPanel.Dock="Right" Click="Btn_saveConfig" VerticalAlignment="Center"/>-->
             </DockPanel>
         </StackPanel>
     </DockPanel>
